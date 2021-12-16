@@ -128,4 +128,4 @@ training_scripts/*.csv
 *.pt
 *.pth
 *.p
-*/notes.txt
+notes.txt
