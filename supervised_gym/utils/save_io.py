@@ -165,13 +165,20 @@ def load_checkpoint(path,use_best=False):
     the loaded checkpoint is the BEST checkpt if available, otherwise
     the checkpt of the last epoch
 
-    path: str
-        path to checkpoint file or model_folder
-    use_best: bool
-        if true, will load the best checkpt based on validation metrics
+    Args:
+        path: str
+            path to checkpoint file or model_folder
+        use_best: bool
+            if true, will load the best checkpt based on validation metrics
+    Returns:
+        checkpt: dict
+            a dict that contains all the valuable information for the
+            training.
     """
     path = os.path.expanduser(path)
+    hyps = None
     if os.path.isdir(path):
+        hyps = utils.load_json(os.path.join(path, "hyperparams.json"))
         best_path = os.path.join(path,BEST_CHECKPT_NAME)
         if use_best and os.path.exists(best_path):
             path = best_path 
@@ -180,6 +187,7 @@ def load_checkpoint(path,use_best=False):
             if len(checkpts)==0: return None
             path = checkpts[-1]
     data = torch.load(path, map_location=torch.device("cpu"))
+    if "hyps" not in data: data["hyps"] = hyps
     return data
 
 def load_model(path, models, load_sd=True, use_best=False,
@@ -213,36 +221,11 @@ def load_model(path, models, load_sd=True, use_best=False,
     data = load_checkpoint(path,use_best=use_best)
     if 'hyps' in data:
         kwargs = data['hyps']
-    elif 'model_hyps' in data:
-        kwargs = data['model_hyps']
-    elif hyps is not None:
-        kwargs = hyps
     else:
-        assert False, "Cannot find architecture arguments"
-    model = models[kwargs['model_class']](**kwargs)
+        kwargs = utils.load_json(os.path.join(path, "hyps.json"))
+    model = models[kwargs['model_type']](**kwargs)
     if "state_dict" in data and load_sd:
-        try:
-            model.load_state_dict(data['state_dict'])
-        except:
-            sd = data['state_dict']
-            keys = list(sd.keys())
-            for k in keys:
-                splt = k.split(".")
-                if "transformer" == splt[0]:
-                    new_key = ["seqmodel"] + [x for x in splt[1:]]
-                    new_key = ".".join(new_key)
-                    sd[new_key] = sd[k]
-                    del sd[k]
-                    if verbose:
-                        print("renaming {} to {}".format(k,new_key))
-                elif "module" == splt[0]:
-                    new_key = [x for x in splt[1:]]
-                    new_key = ".".join(new_key)
-                    sd[new_key] = sd[k]
-                    del sd[k]
-                    if verbose:
-                        print("renaming {} to {}".format(k,new_key))
-            model.load_state_dict(sd)
+        model.load_state_dict(data['state_dict'])
     else:
         print("state dict not loaded!")
     return model

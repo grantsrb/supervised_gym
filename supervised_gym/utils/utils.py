@@ -31,7 +31,7 @@ def load_json(file_name):
 def resize2Square(img, size):
     """
     resizes image to a square with the argued size. Preserves the aspect
-    ratio.
+    ratio. fills the empty space with zeros.
 
     img: ndarray (H,W, optional C)
     size: int
@@ -60,7 +60,8 @@ def rand_sample(arr, n_samples=1):
     """
     Randomly samples a single element from the argued array.
 
-    arr: sequence of some sort
+    Args:
+        arr: indexable sequence
     """
     if not isinstance(arr,list): arr = list(arr)
     if len(arr) == 0: print("len 0:", arr)
@@ -87,13 +88,14 @@ def get_max_key(d):
             max_k = k
     return max_k
 
-def update_shape(shape, kernel=3, padding=0, stride=1, op="conv"):
+def update_shape(shape, depth, kernel=3, padding=0, stride=1, op="conv"):
     """
     Calculates the new shape of the tensor following a convolution or
-    deconvolution
+    deconvolution. Does not operate in place on shape.
 
-    shape: list-like or int
-        the height/width of the activations
+    shape: list-like (chan, height, width)
+    depth: int
+        the new number of channels
     kernel: int or list-like
         size of the kernel
     padding: list-like or int
@@ -101,28 +103,41 @@ def update_shape(shape, kernel=3, padding=0, stride=1, op="conv"):
     op: str
         'conv' or 'deconv'
     """
-    if type(shape) == type(int()):
-        shape = np.asarray([shape])
-    else:
-        shape = np.asarray(shape)
+    heightwidth = np.asarray([*shape[-2:]])
     if type(kernel) == type(int()):
-        kernel = np.asarray([kernel for i in range(len(shape))])
+        kernel = np.asarray([kernel, kernel])
     else:
         kernel = np.asarray(kernel)
     if type(padding) == type(int()):
-        padding = np.asarray([padding for i in range(len(shape))])
+        padding = np.asarray([padding,padding])
     else:
         padding = np.asarray(padding)
     if type(stride) == type(int()):
-        stride = np.asarray([stride for i in range(len(shape))])
+        stride = np.asarray([stride,stride])
     else:
         stride = np.asarray(stride)
 
     if op == "conv":
-        shape = (shape - kernel + 2*padding)/stride + 1
+        heightwidth = (heightwidth - kernel + 2*padding)/stride + 1
     elif op == "deconv" or op == "conv_transpose":
-        shape = (shape - 1)*stride + kernel - 2*padding
-    if len(shape) == 1:
-        return int(shape[0])
-    return [int(s) for s in shape]
+        heightwidth = (heightwidth - 1)*stride + kernel - 2*padding
+    return (depth, *heightwidth)
+
+def sample_action(pi):
+    """
+    Stochastically selects an action from the pi vectors.
+
+    Args:
+        pi: torch FloatTensor (..., N) (must sum to 1 across last dim)
+            this is most likely going to be a model output vector that
+            has passed through a softmax
+    """
+    pi = pi.cpu()
+    rand_nums = torch.rand(*pi.shape[:-1])
+    cumu_sum = torch.zeros(pi.shape[:-1])
+    actions = -torch.ones(pi.shape[:-1])
+    for i in range(pi.shape[-1]):
+        cumu_sum += pi[...,i]
+        actions[(cumu_sum >= rand_nums) & (actions < 0)] = i
+    return actions
 

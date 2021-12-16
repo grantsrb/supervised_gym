@@ -34,11 +34,11 @@ def get_resume_checkpt(hyps, verbose=True):
             "resume_folder": str
                 must be a key present in hyps for this function to act.
             "ignore_keys": list of str
-                an optional key to enumerate keys to be ignored when
-                loading the old hyperparameter set
+                an optional key used to enumerate keys to be ignored
+                when loading the old hyperparameter set
         vals: varies
     """
-    ignore_keys = ['n_epochs','rank']
+    ignore_keys = ['n_epochs','rank',"n_eval_steps"]
     ignore_keys = utils.try_key(hyps,'ignore_keys',ignore_keys)
     resume_folder = utils.try_key(hyps,'resume_folder',None)
     if resume_folder is not None and resume_folder != "":
@@ -105,9 +105,14 @@ def get_save_folder(hyps):
 
     hyps: dict
         keys:
+            main_path: str
+                the leading path to the save_folder
             exp_name: str
+                the root experiment name
             exp_num: int
+                the experiment id number
             search_keys: str
+                the identifying keys for this hyperparameter search
     """
     save_folder = "{}/{}_{}".format(hyps['main_path'],
                                     hyps['exp_name'],
