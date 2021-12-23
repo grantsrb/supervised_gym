@@ -1,5 +1,5 @@
 from supervised_gym.experience import ExperienceReplay, DataCollector
-from supervised_gym.models import SimpleCNN
+from supervised_gym.models import * # SimpleCNN, SimpleLSTM
 from supervised_gym.recorders import Recorder
 from supervised_gym.utils.utils import try_key
 
@@ -53,7 +53,7 @@ def train(rank, hyps, verbose=False):
     for epoch in range(n_epochs):
         if verbose:
             print()
-            print("Starting Epoch", epoch)
+            print("Starting Epoch", epoch, "--", hyps["save_folder"])
         # Run environments, automatically fills experience replay's
         # shared_exp tensors
         data_collector.await_runners()
@@ -121,6 +121,18 @@ class Trainer:
         """
         return globals()[optim_type](list(model.parameters()), lr=lr)
 
+    def reset_model(self, model, batch_size):
+        """
+        Determines what type of reset to do. If the data is provided
+        in a random order, the model is simply reset. If, however,
+        the data is provided in sequence, we must store the h value
+        from the first forward loop in the last training loop.
+        """
+        if self.hyps["randomize_order"]:
+            model.reset(batch_size=batch_size)
+        else:
+            model.reset_to_step(step=1)
+
     def train(self, model, data_iter):
         """
         This function handles the actual training. It loops through the
@@ -141,14 +153,16 @@ class Trainer:
         """
         if torch.cuda.is_available(): torch.cuda.empty_cache()
         model.train()
+        model.reset(self.hyps['batch_size'])
         for i,data in enumerate(data_iter):
             iter_start = time.time()
             self.optim.zero_grad()
-            obs = data['obs']
+            obs =   data['obs']
             actns = data['actns'].to(DEVICE)
             dones = data["dones"]
+            self.reset_model(model, len(obs))
             # model uses dones if it is recurrent
-            logits = model(obs.to(DEVICE), dones) 
+            logits = model(obs.to(DEVICE), dones.to(DEVICE)) 
             loss = self.loss_fxn(
                 logits.reshape(-1, logits.shape[-1]),
                 actns.flatten()
@@ -166,7 +180,6 @@ class Trainer:
             # Record metrics
             metrics = {
                 "train_loss": loss.item(),
-                "train_rew": data["rews"].mean().item(),
                 **accs}
             self.recorder.track_loop(metrics)
             self.print_loop(
@@ -266,6 +279,7 @@ class Trainer:
         # run model directly on an environment
         with torch.no_grad():
             # Returned tensors are mainly of shape (n_eval_steps,)
+            model.reset(batch_size=1)
             eval_data = data_collector.val_runner.rollout(
                 model,
                 n_tsteps=self.hyps["n_eval_steps"],
@@ -292,6 +306,7 @@ class Trainer:
             "val_rew": avg_rew.item(),
             **accs
         }
+        # Extra metrics if using gordongames variant
         if "gordongames" in self.hyps["env_type"]:
             keys = ["n_items", "n_targs", "n_aligned"]
             dones = eval_data["dones"].reshape(-1)
@@ -317,19 +332,19 @@ class Trainer:
         **kwargs
     ):
         """
-        Calculates the accuracy of the episodes with regards to
-        aligning the items.
+        Calculates the accuracy of the episodes with regards to matching
+        the correct number of objects.
 
         Args:
-            n_targs: long tensor (N,)
+            n_targs: ndarray or long tensor (N,)
                 Collects the number of targets in the episode
                 only relevant if using a gordongames
                 environment variant
-            n_items: long tensor (N,)
+            n_items: ndarray or long tensor (N,)
                 Collects the number of items over the course of
                 the episode. only relevant if using a
                 gordongames environment variant
-            n_aligned: long tensor (N,)
+            n_aligned: ndarray or long tensor (N,)
                 Collects the number of items that are aligned
                 with targets over the course of the episode.
                 only relevant if using a gordongames
@@ -340,45 +355,36 @@ class Trainer:
         Returns:
             metrics: dict
                 keys: str
-                    "perc_aligned": float
-                        the average number of correctly aligned items
-                        as a portion of the number of targets
-                            n_aligned/n_targ
-                    "perc_unaligned": float
-                        the average number of unaligned items as a
-                        portion of the number of targets.
-                            (n_items-n_aligned)/n_targ
-                    "perc_over": float
-                        the average number of items more than the 
-                        number of targets as a portion of the number
-                        of targets
-                            max(n_items-n_targ,0)/n_targ
-                    "perc_under": float
-                        the average number of items less than the 
-                        number of targets as a portion of the number of
-                        targets
-                            max(n_targ-n_items,0)/n_targ
-                    "perc_off": float
-                        the average absolute value difference of number
-                        of items to the number of targets as a portion
-                        of the number of targets
-                            abs(n_items-n_targ)/n_targ
+                    "error": float
+                        the difference between the number of target
+                        objects and the number of item objects
+                    "coef_of_var": float
+                        the coefficient of variation. The avg error
+                        divided by the goal size
+                    "stddev": float
+                        the standard deviation of the n_item responses.
+                    "mean_resp": float
+                        the mean response of the n_item responses.
         """
         fxns = {
-            "perc_aligned": perc_aligned,
-            "perc_unaligned": perc_unaligned,
-            "perc_over": perc_over,
-            "perc_under": perc_under,
-            "perc_off": perc_off,
-            "perc_correct": perc_correct
+            "error": calc_error,
+            "coef_of_var": coef_of_var,
+            "stddev": stddev,
+            "mean_resp": mean_resp,
         }
         metrics = dict()
+        if type(n_targs) == torch.Tensor:
+            n_targs = n_targs.detach().cpu().numpy()
+        if type(n_items) == torch.Tensor:
+            n_items = n_items.detach().cpu().numpy()
+        if type(n_aligned) == torch.Tensor:
+            n_aligned = n_aligned.detach().cpu().numpy()
         inpts = {
-            "n_items":n_items,
-            "n_targs":n_targs,
+            "n_items":  n_items,
+            "n_targs":  n_targs,
             "n_aligned":n_aligned,
         }
-        categories = set(n_targs.numpy().astype(np.int))
+        categories = set(n_targs.astype(np.int))
         for key,fxn in fxns.items():
             metrics[prepender+"_"+ key] = fxn(**inpts)
             # Calc for each specific target count
@@ -386,6 +392,8 @@ class Trainer:
                 targs = n_targs[n_targs==cat]
                 items = n_items[n_targs==cat]
                 aligned = n_aligned[n_targs==cat]
+                if len(targs)==0 or len(items)==0 or len(aligned)==0:
+                    continue
                 metrics[prepender+"_"+key+"_"+str(cat)] = fxn(
                     n_items=items,
                     n_targs=targs,
@@ -417,34 +425,83 @@ class Trainer:
         """
         pass
 
+def mean_resp(n_items, **kwargs):
+    """
+    Args:
+        n_items: ndarray (same dims as n_targs)
+    Returns:
+        mean: float
+            the standard deviation of the responses
+    """
+    return n_items.mean()
+
+def stddev(n_items, **kwargs):
+    """
+    Args:
+        n_items: ndarray (same dims as n_targs)
+    Returns:
+        std: float
+            the standard deviation of the responses
+    """
+    return n_items.std()
+
+def calc_error(n_items, n_targs, **kwargs):
+    """
+    The square root of the mean squared distance between n_items and 
+    n_targs.
+
+    Args:
+        n_items: ndarray (same dims as n_targs)
+        n_targs: ndarray (same dims as n_items)
+    Returns:
+        error: float
+            the square root of the average squared distance from the
+            goal.
+    """
+    return np.sqrt(((n_items-n_targs)**2).mean())
+
+def coef_of_var(n_items, n_targs, **kwargs):
+    """
+    Returns the coefficient of variation which is the error divided
+    by the average n_targs
+
+    Args:
+        n_items: ndarray (same dims as n_targs)
+        n_targs: ndarray (same dims as n_items)
+    Returns:
+        coef_var: float
+            the error divided by the average n_targs
+    """
+    return n_items.std()/n_targs.mean()
+
 def perc_aligned(n_aligned, n_targs, **kwargs):
     """
     Calculates the percent of items that are aligned
 
     Args:
-        n_aligned: torch LongTensor (same dims as n_targs)
-        n_targs: torch LongTensor (same dims as n_aligned)
+        n_aligned: ndarray (same dims as n_targs)
+        n_targs: ndarray (same dims as n_aligned)
     Returns:
         perc: float
             the average percent aligned over all entries
     """
-    perc = n_aligned.float()/n_targs.float()
-    return perc.mean().item()*100
+    perc = n_aligned/n_targs
+    return perc.mean()*100
 
 def perc_unaligned(n_items, n_aligned, n_targs, **kwargs):
     """
     Calculates the percent of items that are unaligned
 
     Args:
-        n_items: torch LongTensor (same dims as n_targs)
-        n_aligned: torch LongTensor (same dims as n_targs)
-        n_targs: torch LongTensor (same dims as n_items)
+        n_items: ndarray (same dims as n_targs)
+        n_aligned: ndarray (same dims as n_targs)
+        n_targs: ndarray (same dims as n_items)
     Returns:
         perc: float
             the average percent unaligned over all entries
     """
-    perc = (n_items-n_aligned).float()/n_targs.float()
-    return perc.mean().item()*100
+    perc = (n_items-n_aligned)/n_targs
+    return perc.mean()*100
 
 def perc_over(n_items, n_targs, **kwargs):
     """
@@ -454,16 +511,16 @@ def perc_over(n_items, n_targs, **kwargs):
     counted as 0%
 
     Args:
-        n_items: torch LongTensor (same dims as n_targs)
-        n_targs: torch LongTensor (same dims as n_items)
+        n_items: ndarray (same dims as n_targs)
+        n_targs: ndarray (same dims as n_items)
     Returns:
         perc: float
             the average amount of items over the number of targets
     """
-    n_items = n_items.clone()
+    n_items = n_items.copy()
     n_items[n_items<n_targs] = n_targs[n_items<n_targs]
-    perc = (n_items-n_targs).float()/n_targs.float()
-    return perc.mean().item()*100
+    perc = (n_items-n_targs)/n_targs
+    return perc.mean()*100
 
 def perc_under(n_items, n_targs, **kwargs):
     """
@@ -473,16 +530,16 @@ def perc_under(n_items, n_targs, **kwargs):
     counted as 0%
 
     Args:
-        n_items: torch LongTensor (same dims as n_targs)
-        n_targs: torch LongTensor (same dims as n_items)
+        n_items: ndarray (same dims as n_targs)
+        n_targs: ndarray (same dims as n_items)
     Returns:
         perc: float
             the average amount of items less than the number of targets
     """
-    n_items = n_items.clone()
+    n_items = n_items.copy()
     n_items[n_items>n_targs] = n_targs[n_items>n_targs]
-    perc = (n_targs-n_items).float()/n_targs.float()
-    return perc.mean().item()*100
+    perc = (n_targs-n_items)/n_targs
+    return perc.mean()*100
 
 def perc_off(n_items, n_targs, **kwargs):
     """
@@ -490,15 +547,15 @@ def perc_off(n_items, n_targs, **kwargs):
     was different than the number of targets.
 
     Args:
-        n_items: torch LongTensor (same dims as n_targs)
-        n_targs: torch LongTensor (same dims as n_items)
+        n_items: ndarray (same dims as n_targs)
+        n_targs: ndarray (same dims as n_items)
     Returns:
         perc: float
             the average amount of items different than the number of
             targets
     """
-    perc = torch.abs(n_targs-n_items).float()/n_targs.float()
-    return perc.mean().item()*100
+    perc = torch.abs(n_targs-n_items)/n_targs
+    return perc.mean()*100
 
 def perc_correct(n_aligned, n_targs, **kwargs):
     """
@@ -506,13 +563,13 @@ def perc_correct(n_aligned, n_targs, **kwargs):
     items is equal to the number of targets.
 
     Args:
-        n_aligned: torch LongTensor (same dims as n_targs)
-        n_targs: torch LongTensor (same dims as n_aligned)
+        n_aligned: ndarray (same dims as n_targs)
+        n_targs: ndarray (same dims as n_aligned)
     Returns:
         perc: float
             the average number of entries in which the number of
             aligned items is equal to the number of targets.
     """
-    perc = (n_aligned == n_targs).float()
-    return perc.mean().item()*100
+    perc = (n_aligned == n_targs)
+    return perc.mean()*100
 
