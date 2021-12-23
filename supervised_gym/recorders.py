@@ -31,9 +31,9 @@ class Recorder:
         self.hyps = hyps
         self.df = None # Used to store a dataframe with the fxn to_df
         self.reset_stats()
-        self.best_score = np.inf
-        if hyps['best_by_key'] == "loss":
-            self.best_score = -np.inf
+        self.best_score = -np.inf
+        if "loss" in hyps['best_by_key']:
+            self.best_score = np.inf
         # Initialize important variables
         hyps['save_root'] = try_key(hyps, 'save_root', "./")
         hyps["main_path"] = os.path.join(
@@ -118,6 +118,7 @@ class Recorder:
         save_dict["state_dict"] = model.state_dict()
         save_dict["optim_dict"] = optim.state_dict()
         key = self.hyps["best_by_key"]
+        if key not in save_dict["stats"]: key = "val_loss_avg"
         if "loss" in key:
             is_best = save_dict["stats"][key] < self.best_score
         else:
@@ -146,7 +147,7 @@ class Recorder:
                 vals: printable objects
         """
         duration = time.time() - self.epoch_time
-        s = "Save Folder: " + self.hyps["save_folder"] + "\n"
+        s = ""
         # Get root names for formatting
         keys = sorted(list(stats_dict.keys()))
         roots = set()
