@@ -22,7 +22,7 @@ if __name__ == "__main__":
     model = globals()[hyps["model_type"]](**hyps).cuda()
     model.load_state_dict(checkpt["state_dict"])
     model.eval()
-    hyps["targ_range"] = (11,12)
+    model.reset()
     val_runner = sg.experience.ValidationRunner(hyps)
     eval_eps = 10
     data = val_runner.rollout(
