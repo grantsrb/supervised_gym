@@ -395,6 +395,7 @@ class ValidationRunner(Runner):
             reset=True
         )
         self.state_bookmark = state
+        self.h_bookmark = None
         self.ep_rew = 0
         self.oracle = globals()[self.hyps["oracle_type"]](**self.hyps)
 
@@ -454,8 +455,13 @@ class ValidationRunner(Runner):
             data["n_targs"] = []
             data["n_items"] = []
             data["n_aligned"] = []
-        state = self.state_bookmark
         model.eval()
+        state = self.state_bookmark
+        if self.h_bookmark is None:
+            model.reset(1)
+        else:
+            model.h, model.c = self.h_bookmark
+        prev_h = self.h_bookmark
         with torch.no_grad():
             loop_count = 0
             max_count = n_tsteps if n_eps is None else n_eps
@@ -478,6 +484,7 @@ class ValidationRunner(Runner):
                     obs=obs,
                     reset=done
                 )
+                if done: model.reset(1)
                 data["dones"].append(int(done))
                 data["rews"].append(rew)
                 if "n_targs" in info and data["n_targs"] is not None:
@@ -487,6 +494,7 @@ class ValidationRunner(Runner):
                 if self.hyps["render"]: self.env.render()
                 loop_count += int(n_tsteps is not None or done)
         self.state_bookmark = state
+        self.h_bookmark = (model.h.data, model.c.data)
         data["logits"] = torch.cat(data["logits"], dim=0)
         data["targs"] = torch.LongTensor(data["targs"])
         data["dones"] = torch.LongTensor(data["dones"])
