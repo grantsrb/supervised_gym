@@ -138,6 +138,6 @@ def sample_action(pi):
     actions = -torch.ones(pi.shape[:-1])
     for i in range(pi.shape[-1]):
         cumu_sum += pi[...,i]
-        actions[(cumu_sum >= rand_nums) & (actions < 0)] = i
+        actions[(cumu_sum >= rand_nums)&(actions < 0)] = i
     return actions
 
