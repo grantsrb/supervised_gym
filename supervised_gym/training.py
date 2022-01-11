@@ -49,14 +49,19 @@ def train(rank, hyps, verbose=False):
     # initialize trainer
     trainer = Trainer(hyps, model, recorder, verbose=verbose)
     # Loop training
-    n_epochs = hyps["n_epochs"] if hyps["exp_name"] != "test" else 2
+    n_epochs = hyps["n_epochs"]
+    if hyps["exp_name"] == "test":
+        n_epochs = 2
+        hyps["n_eval_steps"] = 1000
     for epoch in range(n_epochs):
         if verbose:
             print()
             print("Starting Epoch", epoch, "--", hyps["save_folder"])
         # Run environments, automatically fills experience replay's
         # shared_exp tensors
+        time_start = time.time()
         data_collector.await_runners()
+        if verbose: print("Data Collection:", time.time()-time_start)
         trainer.train(model, data_collector.exp_replay)
         data_collector.dispatch_runners()
         if verbose:
@@ -171,10 +176,11 @@ class Trainer:
             loss.backward()
             self.optim.step()
             # Calc acc
+            categs = None if "n_targs" not in data else data["n_targs"]
             accs = self.calc_accs( # accs is a dict of floats
                 logits=logits,
                 targs=actns,
-                categories=data["n_targs"],
+                categories=categs,
                 prepender="train"
             )
             # Record metrics

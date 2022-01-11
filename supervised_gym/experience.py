@@ -309,7 +309,10 @@ class Runner:
         self.stop_q = stop_q
         self.obs_deque = deque(maxlen=hyps['n_frame_stack'])
         env_type = self.hyps['env_type']
-        self.oracle = globals()[self.hyps["oracle_type"]](env_type)
+        self.oracle = globals()[self.hyps["oracle_type"]](
+            env_type=env_type,
+            actn_max=self.hyps["actn_size"]-1
+        )
 
     def run(self):
         """
