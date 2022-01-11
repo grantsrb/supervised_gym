@@ -1,8 +1,9 @@
 import gordongames as gg
+import mathblocks as mb
 import numpy as np
 
 class Oracle:
-    def __call__(self, env=None, state=None):
+    def __call__(self, env=None, state=None, *args, **kwargs):
         """
         All oracles must implement this function to operate on the
         environment.
@@ -22,11 +23,16 @@ class NullOracle(Oracle):
         return 0
 
 class RandOracle(Oracle):
-    def __init__(self, actn_min=0, actn_max=5):
-        self.brain = lambda: np.random.randint(actn_min, actn_max)
+    def __init__(self, actn_min=0, actn_max=5, *args, **kwargs):
+        self.actn_min = actn_min
+        self.actn_max = actn_max
+        self.brain = self.rand_actn
+
+    def rand_actn(self):
+        return np.random.randint(self.actn_min, self.actn_max)
 
     def __call__(self, *args, **kwargs):
-        return self.brain()
+        return self.rand_actn()
 
 class GordonOracle(Oracle):
     def __init__(self, env_type, *args, **kwargs):
@@ -60,3 +66,17 @@ class GordonOracle(Oracle):
         else:
             self.is_grabbing = grab
             return 5
+
+class MathBlocksOracle(Oracle):
+    def __init__(self, env_type, *args, **kwargs):
+        self.env_type = env_type
+        self.is_grabbing = False
+        self.brain = mb.oracles.DirectOracle(self.env_type)
+
+    def __call__(self, env, *args, **kwargs):
+        """
+        Args:
+            env: SequentialEnvironment
+                the environment
+        """
+        return self.brain(env.env)
