@@ -2,6 +2,8 @@ import os
 import torch
 import gym
 import gordongames
+import mathblocks
+import numberline
 import gym_snake
 import numpy as np
 from supervised_gym.preprocessors import *
@@ -42,7 +44,10 @@ class SequentialEnvironment:
         self.seed = seed
 
         try:
-            if "gordongames" in env_type or "nake" in env_type:
+            if "gordongames" in env_type or\
+                    "nake" in env_type or\
+                    "block" in env_type or\
+                    "numberline" in env_type:
                 kwargs["env_type"] = env_type
                 self.env = gym.make(env_type, **kwargs)
             else:

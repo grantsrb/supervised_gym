@@ -1,5 +1,6 @@
 import gordongames as gg
 import mathblocks as mb
+import numberline as nl
 import numpy as np
 
 class Oracle:
@@ -72,6 +73,20 @@ class MathBlocksOracle(Oracle):
         self.env_type = env_type
         self.is_grabbing = False
         self.brain = mb.oracles.DirectOracle(self.env_type)
+
+    def __call__(self, env, *args, **kwargs):
+        """
+        Args:
+            env: SequentialEnvironment
+                the environment
+        """
+        return self.brain(env.env)
+
+class NumberLineOracle(Oracle):
+    def __init__(self, env_type, *args, **kwargs):
+        self.env_type = env_type
+        self.is_grabbing = False
+        self.brain = nl.oracles.DirectOracle(self.env_type)
 
     def __call__(self, env, *args, **kwargs):
         """
