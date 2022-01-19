@@ -27,7 +27,8 @@ if __name__ == "__main__":
     eval_eps = 10
     data = val_runner.rollout(
         model,
-        n_tsteps=1000
+        n_tsteps=1000,
+        verbose=True
     )
     #for state, actn in zip(data["states"], data["logits"]):
     #    print(actn.detach().cpu().numpy())

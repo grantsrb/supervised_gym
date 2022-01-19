@@ -402,7 +402,7 @@ class ValidationRunner(Runner):
         self.ep_rew = 0
         self.oracle = globals()[self.hyps["oracle_type"]](**self.hyps)
 
-    def rollout(self, model, n_tsteps, n_eps=None):
+    def rollout(self, model, n_tsteps, n_eps=None, verbose=False):
         """
         rollout handles the actual rollout of the environment. It runs
         for n steps in the game using the model to determine actions
@@ -495,6 +495,13 @@ class ValidationRunner(Runner):
                     data["n_items"].append(info["n_items"])
                     data["n_aligned"].append(info["n_aligned"])
                 if self.hyps["render"]: self.env.render()
+                if verbose:
+                    print("actn:", actn)
+                    print("rew:", rew)
+                    print("done:", done)
+                    print("Info:")
+                    for k in info.keys():
+                        print("{}:".format(k), info[k])
                 loop_count += int(n_tsteps is not None or done)
         self.state_bookmark = state
         self.h_bookmark = (model.h.data, model.c.data)

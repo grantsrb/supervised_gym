@@ -82,6 +82,12 @@ Set values in a json and run `$ python3 main.py your_hyperparams_json.json` to u
         the learning rate
     "l2": float
         the weight decay or l2 regularization parameter
+    "conv_drop": float (between 0 and 1 inclusive)
+        the probability of a neuron being zeroed out during training in
+        the convolutions of the network.
+    "dense_drop": float (between 0 and 1 inclusive)
+        the probability of a neuron being zeroed out during training in
+        the dense portion of the network.
     "conv_noise": float
         the standard deviation of gaussian noise applied to the
         convolutional layers of the model. if 0, has no effect
@@ -95,14 +101,37 @@ Set values in a json and run `$ python3 main.py your_hyperparams_json.json` to u
         an optional parameter to determine the reward scheme for
         gordongames variants
     "pixel_density": int
-        the side length (in pixels) of a unit square in the game. Only
-        applies to gordongames variants
+        the side length (in pixels) of a unit square in the game.
     "grid_size": list of ints (height, width)
-        the number of units (height, width) of the game. Only applies
-        to gordongames variants
+        the number of units (height, width) of the game.
     "targ_range": list of ints (low, high)
         the range of potential target counts. both low and high are
-        inclusive. only applies to gordongames variants.
+        inclusive.
+    "init_range": tuple of ints
+        A range of possible initial numberline values for each
+        game (inclusive). Only used once if `ep_reset` is true.
+    "operators": list or set of str
+        the operators you would like to include in the numberline game.
+        The available arguments are contained in
+        `numberline.constants.OPERATORS`
+    "is_discrete": bool
+        indicates if the operator and target number ranges should
+        be discrete or continuous in the numberline game. true means
+        numbers are discrete.
+    "zoom_range": tuple of inclusive floats | None
+        indicates if the zoom should be restricted to finite
+        amounts in the numberline game. 0 is a zoom level in which each
+        unit represents a value of 1. A zoom of 1 is a level in which
+        each unit represents 10. A zoom of -1 has each unit represent
+        0.1.
+    "scroll_range": tuple of inclusive ints | None
+        if None, no limits are set on the ability to scroll left
+        and right in the numberline game. Otherwise the argued integers
+        represent the min and maximum scrollable values on the
+        numberline. 
+    "ep_reset": bool
+        if true, the value of the numberline resets after each episode.
+        If false the value of the numberline persists through episodes.
 
     "n_envs": int
         the number of parallel environments to collect data in the
