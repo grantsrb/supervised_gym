@@ -18,6 +18,8 @@ class Model(torch.nn.Module):
         actn_size,
         h_size=128,
         bnorm=False,
+        conv_drop=0,
+        dense_drop=0,
         conv_noise=0,
         dense_noise=0,
         *args, **kwargs
@@ -32,12 +34,26 @@ class Model(torch.nn.Module):
                 the size of the hidden dimension for the dense layers
             bnorm: bool
                 if true, the model uses batch normalization
+            conv_drop: float [0 to 1 inclusive]
+                probability of a neuron being dropped out in the
+                convolutions of the network
+            dense_drop: float [0 to 1 inclusive]
+                probability of a neuron being dropped out in the
+                dense layers of the network
+            conv_noise: float
+                standard deviation of noise added to the neurons at
+                each convolutional layer
+            dense_noise: float
+                standard deviation of noise added to the neurons at
+                each dense layer
         """
         super().__init__()
         self.inpt_shape = inpt_shape
         self.actn_size = actn_size
         self.h_size = h_size
         self.bnorm = bnorm
+        self.conv_drop = conv_drop
+        self.dense_drop = dense_drop
         self.conv_noise = conv_noise
         self.dense_noise = dense_noise
 
@@ -164,16 +180,23 @@ class SimpleCNN(Model):
         shape = [*self.inpt_shape[-3:]]
         self.shapes = [shape]
         for i in range(len(self.depths)-1):
+            kernel = [self.kernels[i], self.kernels[i]]
+            if shape[-2] < kernel[0]:
+                kernel[0] = int(shape[-2])
+            if shape[-1] < kernel[1]:
+                kernel[1] = int(shape[-1])
             # CONV
             modules.append(
                 nn.Conv2d(
                     self.depths[i],
                     self.depths[i+1],
-                    kernel_size=self.kernels[i],
+                    kernel_size=kernel,
                     stride=self.strides[i],
                     padding=self.paddings[i]
                 )
             )
+            if self.conv_drop > 0:
+                modules.append(nn.Dropout(self.conv_drop))
             # RELU
             modules.append(GaussianNoise(self.conv_noise))
             modules.append(nn.ReLU())
@@ -184,7 +207,7 @@ class SimpleCNN(Model):
             shape = update_shape(
                 shape, 
                 depth=self.depths[i+1],
-                kernel=self.kernels[i],
+                kernel=kernel,
                 stride=self.strides[i],
                 padding=self.paddings[i]
             )
@@ -199,6 +222,8 @@ class SimpleCNN(Model):
             GaussianNoise(self.dense_noise),
             nn.ReLU()
         ]
+        if self.dense_drop > 0:
+            modules.append(nn.Dropout(self.dense_drop))
         if self.bnorm:
             modules.append(nn.BatchNorm1d(self.h_size))
         self.dense = nn.Sequential(
@@ -252,11 +277,13 @@ class SimpleLSTM(Model):
         self.lstm = nn.LSTMCell(self.flat_size, self.h_size)
 
         # Dense
-        self.dense = nn.Sequential(
-            GaussianNoise(self.dense_noise),
-            nn.ReLU(),
-            nn.Linear(self.h_size, self.actn_size),
-        )
+        modules = []
+        if self.dense_drop > 0:
+            modules.append(nn.Dropout(self.dense_drop))
+        modules.append(GaussianNoise(self.dense_noise))
+        modules.append(nn.ReLU())
+        modules.append(nn.Linear(self.h_size, self.actn_size))
+        self.dense = nn.Sequential(*modules)
 
         # Memory
         self.h = None
