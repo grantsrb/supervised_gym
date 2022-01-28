@@ -93,24 +93,22 @@ class Trainer:
         self.model = model
         self.recorder = recorder
         self.verbose = verbose
-        self.optim = self.get_optimizer(
+        self.set_optimizer_and_scheduler(
             self.model,
             self.hyps["optim_type"],
             self.hyps["lr"]
         )
-        self.scheduler = ReduceLROnPlateau(
-            self.optim,
-            'min',
-            factor=0.5,
-            patience=6,
-            verbose=self.verbose
-        )
         self.loss_fxn = globals()[self.hyps["loss_fxn"]]()
 
-    def get_optimizer(self, model, optim_type, lr, *args, **kwargs):
+    def set_optimizer_and_scheduler(self,
+                                    model,
+                                    optim_type,
+                                    lr,
+                                    *args, **kwargs):
         """
         Initializes an optimizer using the model parameters and the
-        hyperparameters.
+        hyperparameters. Also sets a scheduler for the optimizer's
+        learning rate.
     
         Args:
             model: Model or torch.Module
@@ -124,7 +122,18 @@ class Trainer:
             optim: torch optimizer
                 the model optimizer
         """
-        return globals()[optim_type](list(model.parameters()), lr=lr)
+        self.optim = globals()[optim_type](
+            list(model.parameters()),
+            lr=lr
+        )
+        self.scheduler = ReduceLROnPlateau(
+            self.optim,
+            mode='min',
+            factor=try_key(self.hyps,"factor", 0.5),
+            patience=try_key(self.hyps, "patience", 5),
+            threshold=try_key(self.hyps, "threshold", 0.01),
+            verbose=self.verbose
+        )
 
     def reset_model(self, model, batch_size):
         """
@@ -196,6 +205,9 @@ class Trainer:
                 iter_start
             )
             if self.hyps["exp_name"] == "test" and i >= 2: break
+        self.scheduler.step(
+            np.mean(self.recorder.metrics["train_acc"])
+        )
 
     def calc_accs(self, logits, targs, categories=None, prepender=""):
         """
